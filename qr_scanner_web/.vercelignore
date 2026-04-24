@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules
+npm-debug.log
+__pycache__
+*.pyc
+.DS_Store
+.env.local
+.env.*.local
+qr_codes_generated

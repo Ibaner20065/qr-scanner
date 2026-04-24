@@ -1,6 +1,7 @@
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
 import qrcode
@@ -28,9 +29,28 @@ class Detection(BaseModel):
     team: str
     timestamp: str
 
-@app.get("/")
+# Serve the frontend HTML
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    return {"message": "QR Scanner Backend Running"}
+    try:
+        html_path = Path(__file__).parent.parent / "public" / "index.html"
+        if html_path.exists():
+            with open(html_path, 'r') as f:
+                return f.read()
+    except Exception as e:
+        print(f"Error loading HTML: {e}")
+    
+    # Fallback if HTML file not found
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>QR Scanner</title></head>
+    <body>
+        <h1>QR Scanner Backend Running</h1>
+        <p>Frontend not found. Please check the deployment.</p>
+    </body>
+    </html>
+    """
 
 @app.post("/api/detect")
 async def detect_team(detection: Detection):
