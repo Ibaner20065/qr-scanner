@@ -1,12 +1,18 @@
 {
   "buildCommand": "pip install -r requirements.txt",
-  "outputDirectory": "./",
-  "env": {
-    "PYTHONUNBUFFERED": "1"
-  },
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.11"
+  "public": ".",
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/download-qr-codes",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "index.html"
     }
-  }
+  ]
 }
