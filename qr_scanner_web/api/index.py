@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime
 import qrcode
@@ -25,6 +26,22 @@ teams = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
 class Detection(BaseModel):
     team: str
     timestamp: str
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the index.html file at root"""
+    try:
+        with open("index.html", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return """
+        <html>
+            <body style="font-family: Arial; padding: 20px;">
+                <h1>QR Scanner</h1>
+                <p>index.html not found. Please ensure index.html is in the root directory.</p>
+            </body>
+        </html>
+        """
 
 @app.post("/api/detect")
 async def detect_team(detection: Detection):

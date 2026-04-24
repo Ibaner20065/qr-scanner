@@ -1,18 +1,6 @@
 {
   "buildCommand": "pip install -r requirements.txt",
-  "public": ".",
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "api/index.py"
-    },
-    {
-      "src": "/download-qr-codes",
-      "dest": "api/index.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "index.html"
-    }
-  ]
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  }
 }
