@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,6 +7,7 @@ import qrcode
 import io
 import zipfile
 from pathlib import Path
+from fastapi.middleware.wsgi import WSGIMiddleware
 
 app = FastAPI()
 
@@ -29,6 +30,478 @@ class Detection(BaseModel):
 
 # HTML content embedded directly
 HTML_CONTENT = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team QR Scanner - Quiz Event</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .scanner-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .camera-container {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            aspect-ratio: 1;
+        }
+
+        #camera {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 3px solid #00ff00;
+            width: 70%;
+            height: 70%;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .detected-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .team-card {
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .team-card.detected {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .team-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .team-rank {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .team-name {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .team-time {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-start {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-start:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+
+        .btn-reset {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+
+        .btn-download {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            color: #0066cc;
+        }
+
+        .leaderboard {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        .leaderboard h3 {
+            margin-bottom: 15px;
+            color: #333;
+            text-align: center;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+            font-size: 1.1em;
+        }
+
+        @media (max-width: 768px) {
+            .scanner-section {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Team QR Scanner</h1>
+        <p class="subtitle">Real-time Quiz Event Detection</p>
+
+        <div class="controls">
+            <button class="btn-start" id="startBtn">▶ Start Scanner</button>
+            <button class="btn-reset" id="resetBtn">🔄 Reset</button>
+            <button class="btn-download" id="downloadQRBtn">📥 Download QR Codes</button>
+        </div>
+
+        <div class="status" id="status">Ready to start. Click "Start Scanner" to begin.</div>
+
+        <div class="scanner-section">
+            <div class="camera-container">
+                <video id="camera" playsinline></video>
+                <div class="camera-overlay"></div>
+            </div>
+
+            <div class="leaderboard">
+                <h3>📊 Detected Teams</h3>
+                <div class="detected-list" id="detectedList">
+                    <div class="empty-state">No teams detected yet...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+        const API_BASE = window.location.origin; // Use current domain for API calls
+        
+        let camera = document.getElementById('camera');
+        let canvas = document.createElement('canvas');
+        let canvasContext = canvas.getContext('2d');
+        let detectedTeams = new Map();
+        let scannerRunning = false;
+        let detectionCount = 0;
+
+        document.getElementById('startBtn').addEventListener('click', startScanner);
+        document.getElementById('resetBtn').addEventListener('click', resetScanner);
+        document.getElementById('downloadQRBtn').addEventListener('click', downloadQRCodes);
+
+        async function startScanner() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                camera.srcObject = stream;
+                scannerRunning = true;
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('status').textContent = '🔴 Scanner Active - Hold QR codes in front of camera';
+                document.getElementById('status').style.background = '#ffe7e7';
+                document.getElementById('status').style.color = '#cc0000';
+                scanQRCodes();
+            } catch (err) {
+                alert('Camera access denied. Please allow camera permissions.');
+                console.error(err);
+            }
+        }
+
+        function scanQRCodes() {
+            if (!scannerRunning) return;
+
+            canvas.width = camera.videoWidth;
+            canvas.height = camera.videoHeight;
+
+            canvasContext.drawImage(camera, 0, 0, canvas.width, canvas.height);
+            const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+            if (code && code.data) {
+                handleDetection(code.data);
+            }
+
+            requestAnimationFrame(scanQRCodes);
+        }
+
+        async function handleDetection(data) {
+            const teamMatch = data.match(/TEAM_([A-G])/i);
+            if (teamMatch) {
+                const team = `TEAM_${teamMatch[1].toUpperCase()}`;
+                
+                if (!detectedTeams.has(team)) {
+                    detectionCount++;
+                    const timestamp = new Date().toLocaleTimeString();
+                    detectedTeams.set(team, {
+                        rank: detectionCount,
+                        time: timestamp,
+                        detectedAt: Date.now()
+                    });
+
+                    // Send to backend
+                    try {
+                        await fetch(`${API_BASE}/api/detect`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ team, timestamp })
+                        });
+                    } catch (err) {
+                        console.log('Backend not available, logging locally');
+                    }
+
+                    updateLeaderboard();
+                }
+            }
+        }
+
+        function updateLeaderboard() {
+            const sorted = Array.from(detectedTeams.entries())
+                .sort((a, b) => a[1].rank - b[1].rank);
+
+            let html = '';
+            if (sorted.length === 0) {
+                html = '<div class="empty-state">No teams detected yet...</div>';
+            } else {
+                html = sorted.map(([team, info]) => `
+                    <div class="team-card detected">
+                        <div class="team-info">
+                            <div class="team-rank">#${info.rank}</div>
+                            <div>
+                                <div class="team-name">${team}</div>
+                                <div class="team-time">${info.time}</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('detectedList').innerHTML = html;
+        }
+
+        function resetScanner() {
+            detectedTeams.clear();
+            detectionCount = 0;
+            document.getElementById('status').textContent = 'Ready to start. Click "Start Scanner" to begin.';
+            document.getElementById('status').style.background = '#e7f3ff';
+            document.getElementById('status').style.color = '#0066cc';
+            document.getElementById('startBtn').disabled = false;
+            
+            if (scannerRunning) {
+                scannerRunning = false;
+                const tracks = camera.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+            }
+            
+            updateLeaderboard();
+        }
+
+        function downloadQRCodes() {
+            // This will trigger QR code generation on the backend
+            window.location.href = `${API_BASE}/download-qr-codes`;
+        }
+    </script>
+</body>
+</html>"""
+
+# Serve the frontend HTML
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return HTML_CONTENT
+
+@app.post("/api/detect")
+async def detect_team(detection: Detection):
+    """Log team detection"""
+    detections.append({
+        "team": detection.team,
+        "timestamp": detection.timestamp,
+        "server_time": datetime.now().isoformat()
+    })
+    return {
+        "status": "detected",
+        "team": detection.team,
+        "rank": len(detections)
+    }
+
+@app.get("/api/detections")
+async def get_detections():
+    """Get all detections in order"""
+    return {"detections": detections}
+
+@app.get("/api/reset")
+async def reset_detections():
+    """Clear all detections"""
+    global detections
+    detections = []
+    return {"status": "reset"}
+
+@app.get("/download-qr-codes")
+async def download_qr_codes():
+    """Generate and download all 7 QR codes as a ZIP file"""
+    
+    # Create a temporary directory for QR codes
+    qr_dir = Path("qr_codes_temp")
+    qr_dir.mkdir(exist_ok=True)
+    
+    # Generate QR codes for each team
+    for team in teams:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(f"TEAM_{team}")
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        qr_path = qr_dir / f"TEAM_{team}.png"
+        img.save(qr_path)
+    
+    # Create ZIP file
+    zip_path = "team_qr_codes.zip"
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for team in teams:
+            qr_file = qr_dir / f"TEAM_{team}.png"
+            zipf.write(qr_file, arcname=f"TEAM_{team}.png")
+    
+    # Clean up temporary directory
+    for team in teams:
+        (qr_dir / f"TEAM_{team}.png").unlink()
+    qr_dir.rmdir()
+    
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename="team_qr_codes.zip"
+    )
+
+# Export the app for Vercel
+__all__ = ["app"]
 <html lang="en">
 <head>
     <meta charset="UTF-8">
